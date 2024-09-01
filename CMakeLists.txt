@@ -8,6 +8,8 @@ find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(OpenCV REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(tf2_msgs REQUIRED)
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(AVCODEC REQUIRED libavcodec)
@@ -20,6 +22,8 @@ include_directories(
   ${AVCODEC_INCLUDE_DIRS}
   ${AVFORMAT_INCLUDE_DIRS}
   ${AVUTIL_INCLUDE_DIRS}
+  ${tf2_ros_INCLUDE_DIRS}
+  tf2_ros::tf2_ros
   include
 )
 
@@ -41,6 +45,7 @@ target_link_libraries(${PROJECT_NAME}_node
   ${AVCODEC_LIBRARIES}
   ${AVFORMAT_LIBRARIES}
   ${AVUTIL_LIBRARIES}
+  tf2_ros::tf2_ros
 )
 
 

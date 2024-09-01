@@ -1,7 +1,10 @@
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/image.hpp>
+#include <sensor_msgs/msg/camera_info.hpp>
 #include <cv_bridge/cv_bridge.h>
 #include <opencv2/opencv.hpp>
+#include <tf2_ros/transform_broadcaster.h>
+#include <geometry_msgs/msg/transform_stamped.hpp>
 
 #include "camera/camera.h"
 #include "camera/photography_settings.h"
@@ -39,10 +42,14 @@ private:
     struct SwsContext* img_convert_ctx;
 
     rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr image_pub;
+    rclcpp::Publisher<sensor_msgs::msg::CameraInfo>::SharedPtr camera_info_pub;
+    std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster;
 
 public:
     TestStreamDelegate(rclcpp::Node::SharedPtr node) {
         image_pub = node->create_publisher<sensor_msgs::msg::Image>("insta_image_yuv", 60);
+        camera_info_pub = node->create_publisher<sensor_msgs::msg::CameraInfo>("camera_info", 60);
+        tf_broadcaster = std::make_shared<tf2_ros::TransformBroadcaster>(node);
 
         codec = avcodec_find_decoder(AV_CODEC_ID_H264);
         if (!codec) {
@@ -70,6 +77,38 @@ public:
         av_frame_free(&avFrame);
         av_packet_free(&pkt);
         avcodec_free_context(&codecCtx);
+    }
+
+    void broadcast_transform() {
+        geometry_msgs::msg::TransformStamped transformStamped;
+        transformStamped.header.stamp = rclcpp::Clock().now();
+        transformStamped.header.frame_id = "base_link";
+        transformStamped.child_frame_id = "camera_frame";
+
+        transformStamped.transform.translation.x = 0.0;
+        transformStamped.transform.translation.y = 0.0;
+        transformStamped.transform.translation.z = 0.0;
+        transformStamped.transform.rotation.x = 0.0;
+        transformStamped.transform.rotation.y = 0.0;
+        transformStamped.transform.rotation.z = 0.0;
+        transformStamped.transform.rotation.w = 1.0;
+
+        tf_broadcaster->sendTransform(transformStamped);
+    }
+
+    sensor_msgs::msg::CameraInfo generate_camera_info(int width, int height) {
+        sensor_msgs::msg::CameraInfo camera_info_msg;
+        camera_info_msg.header.frame_id = "camera_frame";
+        camera_info_msg.width = width;
+        camera_info_msg.height = height;
+
+        // Dummy intrinsic matrix values; these should be replaced with actual camera parameters
+        camera_info_msg.k = {width, 0.0, width / 2.0, 0.0, height, height / 2.0, 0.0, 0.0, 1.0};
+        camera_info_msg.d = {0.0, 0.0, 0.0, 0.0, 0.0};  // Assuming no distortion
+        camera_info_msg.r = {1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0};
+        camera_info_msg.p = {width, 0.0, width / 2.0, 0.0, 0.0, height, height / 2.0, 0.0, 0.0, 0.0, 1.0, 0.0};
+
+        return camera_info_msg;
     }
 
     void OnAudioData(const uint8_t* data, size_t size, int64_t timestamp) override {
@@ -105,6 +144,14 @@ public:
                     msg.data.assign(yuv.datastart, yuv.dataend);
 
                     image_pub->publish(msg);
+
+                    // Generate and publish CameraInfo
+                    auto camera_info_msg = generate_camera_info(width, height);
+                    camera_info_msg.header.stamp = msg.header.stamp; // Use the same timestamp as the image
+                    camera_info_pub->publish(camera_info_msg);
+
+                    // Broadcast the transform
+                    broadcast_transform();
                 }
             }
         }

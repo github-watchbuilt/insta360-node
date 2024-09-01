@@ -12,9 +12,17 @@ from geometry_msgs.msg import TransformStamped
 def split_image(image):
     height, width = image.shape[:2]
     mid_point = width // 2
-    front_image = image[:, :mid_point]
-    back_image = image[:, mid_point:]
+    front_image = image[:, :mid_point]  # Left half of the image
+    back_image = image[:, mid_point:]   # Right half of the image
     return front_image, back_image
+
+
+# def split_image(image):
+#     height, width = image.shape[:2]
+#     mid_point = width // 2
+#     front_image = image[:, :mid_point]
+#     back_image = image[:, mid_point:]
+#     return front_image, back_image
 
 def undistort_image(image, K, D):
     h, w = image.shape[:2]
@@ -45,8 +53,8 @@ class LiveProcessing(Node):
         self.image_sub = self.create_subscription(Image, self.topic_name, self.processing, 10)
         self.front_image_pub = self.create_publisher(CompressedImage, 'front_camera_image/compressed', 10)
         self.back_image_pub = self.create_publisher(CompressedImage, 'back_camera_image/compressed', 10)
-        self.front_camera_info_pub = self.create_publisher(CameraInfo, 'front_camera_info', 10)
-        self.back_camera_info_pub = self.create_publisher(CameraInfo, 'back_camera_info', 10)
+        self.front_camera_info_pub = self.create_publisher(CameraInfo, '/front_camera_image/camera_info', 10)
+        self.back_camera_info_pub = self.create_publisher(CameraInfo, '/back_camera_image/camera_info', 10)
 
         self.tf_broadcaster = StaticTransformBroadcaster(self)
         self.broadcast_static_transforms()
@@ -103,7 +111,7 @@ class LiveProcessing(Node):
 
             # Convert the YUV image to BGR format
             bgr_image = cv2.cvtColor(image, cv2.COLOR_YUV2BGR_I420)
-            self.get_logger().info(f"Image Size: ({bgr_image.shape[1]}, {bgr_image.shape[0]})")
+            self.get_logger().info(f"Original Image Size: ({bgr_image.shape[1]}, {bgr_image.shape[0]})")
 
             # Assuming the image is horizontally split for Front | Back
             height, width = bgr_image.shape[:2]
@@ -112,12 +120,16 @@ class LiveProcessing(Node):
             front_image = bgr_image[:, :mid_point]
             back_image = bgr_image[:, mid_point:]
 
+            # Verify the sizes after splitting
+            self.get_logger().info(f"Front Image Size: ({front_image.shape[1]}, {front_image.shape[0]})")
+            self.get_logger().info(f"Back Image Size: ({back_image.shape[1]}, {back_image.shape[0]})")
+
             # Live Undistortion
             if self.undistort:
                 front_image = undistort_image(front_image, self.K, self.D)
                 back_image = undistort_image(back_image, self.K, self.D)
 
-            # Publish CameraInfo
+            # Generate and Log CameraInfo
             front_camera_info = self.generate_camera_info(front_image.shape[1], front_image.shape[0], self.K, self.D)
             back_camera_info = self.generate_camera_info(back_image.shape[1], back_image.shape[0], self.K, self.D)
             front_camera_info.header.stamp = msg.header.stamp
@@ -125,9 +137,13 @@ class LiveProcessing(Node):
             back_camera_info.header.stamp = msg.header.stamp
             back_camera_info.header.frame_id = "back_frame"
 
+            self.get_logger().info(f"Front CameraInfo: {front_camera_info}")
+            self.get_logger().info(f"Back CameraInfo: {back_camera_info}")
+
+            # Publish CameraInfo
             self.front_camera_info_pub.publish(front_camera_info)
             self.back_camera_info_pub.publish(back_camera_info)
-            self.get_logger().info(f"Published CameraInfo for front and back cameras.")
+            self.get_logger().info("Published CameraInfo for front and back cameras.")
 
             # Convert to compressed image message
             front_compressed_msg = compress_image_to_msg(front_image, msg.header.stamp)
